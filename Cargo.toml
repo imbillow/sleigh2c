@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 sleigh-rs = "0.1.5"
+sleigh2rust = "0.1.6"

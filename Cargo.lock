@@ -49,15 +49,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "litrs"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4ce301924b7887e9d637144fdade93f9dfff9b60981d4ac161db09720d39aa5"
-dependencies = [
- "proc-macro2",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -118,19 +109,6 @@ name = "sleigh2c"
 version = "0.1.0"
 dependencies = [
  "sleigh-rs",
- "sleigh2macro",
- "sleigh2rust",
-]
-
-[[package]]
-name = "sleigh2macro"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5384ceb96822ab966d7c98129a5092e695346788b49921b601799c47da953534"
-dependencies = [
- "litrs",
- "proc-macro2",
- "quote",
  "sleigh2rust",
 ]
 
