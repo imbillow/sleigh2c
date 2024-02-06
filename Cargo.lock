@@ -97,6 +97,14 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 [[package]]
 name = "sleigh-rs"
 version = "0.1.5"
+dependencies = [
+ "nom",
+ "thiserror",
+]
+
+[[package]]
+name = "sleigh-rs"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee60b8e968946b4016e291184fe9c6b7464ea5fb242f424283934d0d22156b82"
 dependencies = [
@@ -108,7 +116,7 @@ dependencies = [
 name = "sleigh2c"
 version = "0.1.0"
 dependencies = [
- "sleigh-rs",
+ "sleigh-rs 0.1.5",
  "sleigh2rust",
 ]
 
@@ -123,7 +131,7 @@ dependencies = [
  "indexmap",
  "proc-macro2",
  "quote",
- "sleigh-rs",
+ "sleigh-rs 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
