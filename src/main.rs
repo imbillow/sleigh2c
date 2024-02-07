@@ -1,4 +1,7 @@
+#![feature(iter_intersperse)]
+
 use sleigh_rs::disassembly::{self, ExprElement, Op, OpUnary, ReadScope};
+use sleigh_rs::display::DisplayElement;
 use sleigh_rs::pattern::CmpOp;
 use sleigh_rs::{
     file_to_sleigh,
@@ -11,18 +14,27 @@ use sleigh_rs::{
     table::Constructor,
     Sleigh,
 };
+use std::fmt::Display;
 use std::{
     collections::HashSet,
     error::Error,
-    fmt::{self, write},
     io::{self, stdout, Write},
 };
+use std::string::ToString;
 
-trait MyToString {
+trait ToStr {
     fn to_string(&self) -> &str;
 }
 
-impl MyToString for CmpOp {
+trait ToString_ {
+    fn to_string(&self) -> String;
+}
+
+trait ToStringSleigh {
+    fn to_string(&self, sl: &Sleigh) -> String;
+}
+
+impl ToStr for CmpOp {
     fn to_string(&self) -> &str {
         match self {
             Eq => "==",
@@ -35,7 +47,7 @@ impl MyToString for CmpOp {
     }
 }
 
-impl MyToString for Op {
+impl ToStr for Op {
     fn to_string(&self) -> &str {
         match self {
             Op::Add => "+",
@@ -51,7 +63,7 @@ impl MyToString for Op {
     }
 }
 
-impl MyToString for OpUnary {
+impl ToStr for OpUnary {
     fn to_string(&self) -> &str {
         match self {
             OpUnary::Negation => "-",
@@ -87,14 +99,14 @@ impl<'a> TryFrom<&'a ConstraintValue> for Expr<'a> {
                 }
             }
         }
-        assert!(stack.len() == 1);
+        assert_eq!(stack.len(), 1);
         Ok(stack.pop().unwrap())
     }
 }
 
-impl<'a> ToString for Expr<'a> {
-    fn to_string(&self) -> String {
-        match self {
+impl<'a> Display for Expr<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
             Expr::OpBin(op, v1, v2) => {
                 format!(
                     "({}) {} ({})",
@@ -115,7 +127,14 @@ impl<'a> ToString for Expr<'a> {
                 ReadScope::InstNext(_) => todo!(),
                 ReadScope::Local(_) => todo!(),
             },
-        }
+        };
+        write!(f, "{}", str)
+    }
+}
+
+impl ToString_ for &ConstraintValue {
+    fn to_string(&self) -> String {
+        Expr::try_from(*self).unwrap().to_string()
     }
 }
 
@@ -128,16 +147,27 @@ fn verify_codegen(w: &mut impl Write, sl: &Sleigh, x: &Verification) -> Result<(
             produced_table,
             verification,
         } => {
-            write!(w, "ignored TableBuild")?;
+            let t = sl.table(produced_table.table);
+            if let Some((op, v)) = verification {
+                write!(
+                    w,
+                    "{} {} {}",
+                    t.name().id_mapper(),
+                    op.to_string(),
+                    v.to_string()
+                )?;
+            } else {
+                write!(w, "{}", t.name().token_field_mapper())?;
+            }
         }
         TokenFieldCheck { field, op, value } => {
             let field = sl.token_field(*field);
             write!(
                 w,
                 "{} {} {}",
-                field.name(),
+                field.name().id_mapper(),
                 op.to_string(),
-                Expr::try_from(value)?.to_string()
+                value.to_string()
             )?;
         }
         SubPattern { location, pattern } => {
@@ -147,25 +177,142 @@ fn verify_codegen(w: &mut impl Write, sl: &Sleigh, x: &Verification) -> Result<(
     Ok(())
 }
 
+impl ToStringSleigh for Verification {
+    fn to_string(&self, sl: &Sleigh) -> String {
+        let mut out = io::BufWriter::new(Vec::new());
+        let _ = verify_codegen(&mut out, sl, self);
+        String::from_utf8_lossy(out.buffer()).to_string()
+    }
+}
+
+trait IdMapper {
+    fn id_mapper(&self) -> String;
+    fn token_field_mapper(&self) -> String;
+    fn formater(&self) -> &str;
+}
+
+impl IdMapper for &str {
+    fn id_mapper(&self) -> String {
+        match *self {
+            _ if self.starts_with("op") => format!("OP({}, {})", &self[2..4], &self[4..6]),
+            _ if self.starts_with("R") => match &self[1..5] {
+                "0004" => "R1".to_string(),
+                "1115" => "R2".to_string(),
+                "2731" => "R3".to_string(),
+                _ => self.to_string(),
+            },
+            _ if self.starts_with("fcbit") => {
+                format!("slice(inst->d, {}, {})", &self[5..7], &self[7..9])
+            }
+            _ if self.starts_with("fcond") => {
+                format!("conds[slice(inst->d, {}, {})]", &self[5..7], &self[7..9])
+            }
+            "reg4" => {
+                "R4".to_string()
+            }
+            _ => self.to_string(),
+        }
+    }
+    fn token_field_mapper(&self) -> String {
+        match *self {
+            _ if self.starts_with("R") => match &self[1..5] {
+                "0004" => "get_reg1(inst)".to_string(),
+                "1115" => "get_reg2(inst)".to_string(),
+                "2731" => "get_reg3(inst)".to_string(),
+                _ => self.to_string(),
+            },
+            _ if self.starts_with("fcbit") ||
+                self.starts_with("fcond") => {
+                format!("slice(inst->d, {}, {})", &self[5..7], &self[7..9])
+            }
+             "reg4" => {
+                "get_reg4(inst)".to_string()
+            }
+            _ => self.to_string(),
+        }
+    }
+    fn formater(&self) -> &str {
+        match self {
+            _ if self.starts_with("op") => "%x",
+            _ if self.starts_with("fcbit") => "%d",
+            _ if self.starts_with("fcond") => "%s",
+            _ if self.starts_with("R") => "%s",
+            _ => "%s",
+        }
+    }
+}
+
 fn instr_codegen(w: &mut impl Write, sl: &Sleigh, x: &Constructor) -> Result<(), Box<dyn Error>> {
     let mneumonic = x.display.mneumonic.as_ref().unwrap().as_str();
-    //    println!("{}: {:#?}", mneumonic, x);
+    // println!("{}: {:#?}", mneumonic, x);
     write!(w, "// {}\n", mneumonic)?;
-    for expr in x.pattern.blocks.iter() {
+    write!(w, "if (")?;
+    for (i_expr, expr) in x.pattern.blocks.iter().enumerate() {
         match expr {
-            Block::And { verifications, .. } => {
-                write!(w, "if (")?;
-                for (i, verify) in verifications.iter().enumerate() {
-                    verify_codegen(w, sl, verify)?;
-                    if i < verifications.len() - 1 {
-                        write!(w, " && ")?;
-                    }
+            Block::And {
+                verifications,
+                token_fields,
+                ..
+            } => {
+                if i_expr > 0 {
+                    write!(w, " || ")?;
                 }
-                write!(w, ") {}\n", "{}")?;
+                let tokfs = token_fields
+                    .iter()
+                    .map(|x| sl.token_field(x.field).name().token_field_mapper());
+                let verifs = verifications.iter().map(|x| x.to_string(sl));
+                let allinone = tokfs
+                    .chain(verifs)
+                    .filter(|x| !x.is_empty())
+                    .intersperse(" && ".to_string())
+                    .collect::<String>();
+                write!(w, "({})", allinone)?;
             }
             Block::Or { .. } => (),
         }
     }
+    write!(w, ") {}\n", "{")?;
+    write!(
+        w,
+        "\tinst->id = V850_{};\n",
+        mneumonic.to_uppercase().replace('.', "_")
+    )?;
+    write!(w, "\tINSTR(\"{}\");\n", mneumonic)?;
+    let xs = x
+        .display
+        .elements()
+        .skip(1)
+        .map(|ele| match ele {
+            /*         DisplayElement::Varnode(_) => todo!(),
+            DisplayElement::Context(_) => todo!(),
+            DisplayElement::InstStart(_) => todo!(),
+            DisplayElement::InstNext(_) => todo!(),
+            DisplayElement::Disassembly(_) => todo!(), */
+            DisplayElement::Table(t) => {
+                let t = sl.table(*t);
+                (t.name().formater().to_string(), t.name().id_mapper())
+            }
+            DisplayElement::TokenField(tok) => {
+                let tok = sl.token_field(*tok);
+                (tok.name().formater().to_string(), tok.name().id_mapper())
+            }
+            DisplayElement::Literal(ele) => (ele.clone(), "".to_string()),
+            DisplayElement::Space => (" ".to_string(), "".to_string()),
+            _ => (format!("{:?}", ele), "".to_string()),
+        })
+        .reduce(|acc, e| {
+            let mid = if acc.1.is_empty() || e.1.is_empty() {
+                ""
+            } else {
+                ", "
+            };
+            (acc.0 + e.0.as_str(), acc.1 + mid + e.1.as_str())
+        });
+    if let Some(ops) = xs {
+        write!(w, "\tOPERANDS(\"{}\", {});\n", ops.0, ops.1)?;
+    }
+    write!(w, "\treturn true;\n")?;
+    write!(w, "{}\n", "}")?;
     Ok(())
 }
 
