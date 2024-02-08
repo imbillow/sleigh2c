@@ -15,12 +15,12 @@ use sleigh_rs::{
     Sleigh,
 };
 use std::fmt::Display;
+use std::string::ToString;
 use std::{
     collections::HashSet,
     error::Error,
     io::{self, stdout, Write},
 };
-use std::string::ToString;
 
 trait ToStr {
     fn to_string(&self) -> &str;
@@ -207,9 +207,7 @@ impl IdMapper for &str {
             _ if self.starts_with("fcond") => {
                 format!("conds[slice(inst->d, {}, {})]", &self[5..7], &self[7..9])
             }
-            "reg4" => {
-                "R4".to_string()
-            }
+            "reg4" => "R4".to_string(),
             _ => self.to_string(),
         }
     }
@@ -221,13 +219,10 @@ impl IdMapper for &str {
                 "2731" => "get_reg3(inst)".to_string(),
                 _ => self.to_string(),
             },
-            _ if self.starts_with("fcbit") ||
-                self.starts_with("fcond") => {
+            _ if self.starts_with("fcbit") || self.starts_with("fcond") => {
                 format!("slice(inst->d, {}, {})", &self[5..7], &self[7..9])
             }
-             "reg4" => {
-                "get_reg4(inst)".to_string()
-            }
+            "reg4" => "get_reg4(inst)".to_string(),
             _ => self.to_string(),
         }
     }
@@ -255,14 +250,14 @@ fn instr_codegen(w: &mut impl Write, sl: &Sleigh, x: &Constructor) -> Result<(),
                 ..
             } => {
                 if i_expr > 0 {
-                    write!(w, " || ")?;
+                    write!(w, " && ")?;
                 }
-                let tokfs = token_fields
-                    .iter()
-                    .map(|x| sl.token_field(x.field).name().token_field_mapper());
+                /*                 let tokfs = token_fields
+                .iter()
+                .map(|x| sl.token_field(x.field).name().token_field_mapper()); */
                 let verifs = verifications.iter().map(|x| x.to_string(sl));
-                let allinone = tokfs
-                    .chain(verifs)
+                let allinone = verifs
+                    /*                     .chain(verifs) */
                     .filter(|x| !x.is_empty())
                     .intersperse(" && ".to_string())
                     .collect::<String>();
@@ -438,5 +433,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     for x in instr_sel {
         instr_codegen(&mut code, &sleigh, x)?;
     }
+    write!(&mut code, "return true;")?;
     Ok(())
 }
